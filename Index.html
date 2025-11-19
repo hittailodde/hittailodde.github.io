@@ -1,0 +1,1134 @@
+<!doctype html>
+<html lang="sv">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Gatuquiz – Brandövningsläge (utan ljud)</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin>
+<style>
+  :root{
+    --pad:12px;
+    --green:#16a34a;
+    --blue:#60a5fa;
+    --bg:#0b1120;      /* mörk bakgrund för brandtema */
+    --muted:#9ca3af;
+    --header-grad:linear-gradient(90deg,#111827,#1f2937,#b91c1c);
+    --accent-red:#dc2626;
+    --accent-yellow:#facc15;
+  }
+  html,body{height:100%}
+  body{
+    margin:0;
+    font-family:system-ui,Segoe UI,Roboto,Arial;
+    color:#e5e7eb;
+    /* brandig "plåt"-känsla i bakgrunden */
+    background:
+      radial-gradient(circle at 0 0,rgba(248,250,252,0.16),transparent 55%),
+      radial-gradient(circle at 100% 100%,rgba(248,250,252,0.08),transparent 55%),
+      repeating-linear-gradient(135deg,rgba(15,23,42,0.9) 0,rgba(15,23,42,0.9) 6px,rgba(31,41,55,0.9) 6px,rgba(31,41,55,0.9) 12px);
+  }
+  header{
+    padding:var(--pad);
+    border-bottom:1px solid #1f2937;
+    background:var(--header-grad);
+    position:sticky;
+    top:0;
+    z-index:10;
+    box-shadow:0 8px 24px rgba(0,0,0,0.35);
+  }
+  header h1{color:#f9fafb;margin:0 0 2px;}
+  #topbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:6px}
+  select,button,input{
+    padding:8px 12px;
+    border-radius:999px;
+    border:1px solid #4b5563;
+    background:#020617;
+    color:#e5e7eb;
+    cursor:pointer;
+  }
+  select:focus,button:focus,input:focus{outline:2px solid var(--accent-yellow);outline-offset:1px}
+  input[type="number"]{width:90px;background:#020617}
+  label{color:#e5e7eb;font-size:14px}
+  .pill{background:#020617;color:#cbd5f5;border:1px solid #4b5563;padding:6px 10px;border-radius:999px}
+  #target{font-weight:700;font-size:18px;padding:6px 12px;border-radius:10px;background:rgba(250,204,21,0.12);border:1px solid rgba(250,204,21,0.7);color:#facc15}
+  #map{width:100%;height:calc(100vh - 320px);border-top:1px solid #111827;border-bottom:1px solid #111827}
+  #status{padding:var(--pad);border-top:1px solid #111827;display:flex;gap:12px;align-items:center;flex-wrap:wrap;background:#020617;color:#e5e7eb}
+  #score{margin-left:auto;font-weight:700}
+  #error{color:#fb7185;margin-top:6px}
+  .muted{color:#9ca3af;font-size:13px}
+  #summary{padding:10px 12px;background:rgba(15,23,42,0.9);border:1px solid #4b5563;border-radius:10px;color:#e5e7eb}
+
+  #actionBtn{
+    background:var(--accent-red);
+    color:#fff;
+    border-color:var(--accent-red);
+    font-size:18px;
+    padding:12px 26px;
+    border-radius:999px;
+    box-shadow:0 10px 30px rgba(220,38,38,0.35);
+    font-weight:600;
+    letter-spacing:0.02em;
+    transition:transform 120ms ease, box-shadow 120ms ease, filter 120ms ease;
+  }
+  #actionBtn:disabled{opacity:.6;cursor:not-allowed;box-shadow:none;transform:none}
+  #actionBtn:hover:not(:disabled){filter:brightness(1.05);transform:translateY(-1px);box-shadow:0 14px 40px rgba(220,38,38,0.5)}
+
+  #startBtn{
+    background:rgba(15,23,42,0.9);
+    color:#e5e7eb;
+    border-color:#4b5563;
+    box-shadow:0 4px 18px rgba(15,23,42,0.4);
+  }
+  #startBtn:disabled{opacity:.5;cursor:not-allowed;box-shadow:none}
+
+  #progWrap{position:relative;height:8px;background:#020617;border:1px solid #4b5563;border-radius:999px;overflow:hidden;min-width:160px}
+  #progBar{position:absolute;inset:0;transform-origin:left center;transform:scaleX(0);background:linear-gradient(90deg,var(--accent-red),var(--accent-yellow),var(--blue))}
+
+  #loadingOverlay{position:fixed;inset:0;background:rgba(15,23,42,0.85);display:none;align-items:center;justify-content:center;z-index:9999}
+  #loadingBox{background:#020617;color:#e5e7eb;padding:16px 20px;border-radius:14px;box-shadow:0 20px 60px rgba(0,0,0,.7);display:flex;gap:12px;align-items:center;border:1px solid #4b5563}
+  .spinner{width:22px;height:22px;border:3px solid rgba(148,163,184,0.4);border-top-color:#facc15;border-radius:50%;animation:spin 0.9s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+
+  .truckMarker{width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:22px;line-height:1;filter:drop-shadow(0 1px 2px rgba(0,0,0,.35));}
+  .truckEmoji{display:block;animation:bob 1.4s ease-in-out infinite}
+  @keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-2px)}}
+
+  #resultCard{position:fixed;left:12px;bottom:12px;z-index:11;background:#020617;border:1px solid #4b5563;border-left:6px solid transparent;border-radius:12px;box-shadow:0 10px 35px rgba(0,0,0,.75);padding:12px 14px;min-width:260px;display:none;color:#e5e7eb}
+  #resultTitle{font-weight:700;margin-bottom:6px}
+  #resultMeta{font-size:13px;color:#9ca3af}
+  .badge{display:inline-block;padding:4px 8px;border-radius:999px;font-size:12px;margin-right:6px;border:1px solid #4b5563;background:rgba(15,23,42,0.9)}
+
+  #bearingCtrl{
+    position:fixed;
+    right:12px;
+    bottom:12px;
+    z-index:11;
+    background:#020617;
+    border:1px solid #4b5563;
+    border-radius:999px;
+    box-shadow:0 10px 35px rgba(0,0,0,.75);
+    padding:10px 12px;
+    display:none;
+    align-items:center;
+    gap:10px;
+    color:#e5e7eb;
+  }
+  #bearingArrow{
+    width:42px;
+    height:42px;
+    border-radius:999px;
+    border:2px solid #e5e7eb;
+    background:#020617;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    position:relative;
+  }
+  #bearingArrow::before{
+    content:"";
+    display:block;
+    width:0;
+    height:0;
+    border-left:10px solid transparent;
+    border-right:10px solid transparent;
+    border-bottom:20px solid #f97316;
+  }
+  #bearingDeg{font-weight:600;font-size:14px}
+
+  #helpPanel{
+    position:fixed;
+    left:12px;
+    top:86px;
+    max-width:260px;
+    background:#020617;
+    border:1px solid #4b5563;
+    border-radius:14px;
+    padding:12px 14px;
+    box-shadow:0 14px 40px rgba(0,0,0,.75);
+    z-index:12;
+    transform:translateX(-110%);
+    opacity:0;
+    transition:transform 220ms ease, opacity 220ms ease;
+    color:#e5e7eb;
+  }
+  #helpPanel.open{transform:translateX(0);opacity:1;}
+  #helpTitle{font-weight:700;margin-bottom:6px;font-size:15px}
+  #helpPanel ul{margin:6px 0 8px 18px;padding:0;font-size:13px;color:#9ca3af}
+  #helpPanel li{margin-bottom:3px}
+  #helpCloseBtn{
+    margin-top:4px;
+    font-size:12px;
+    padding:4px 10px;
+    border-radius:999px;
+    background:#111827;
+    border:1px solid #4b5563;
+  }
+  #helpToggle{
+    font-size:13px;
+    padding:6px 12px;
+    border-radius:999px;
+    background:#020617;
+    border:1px solid #4b5563;
+    color:#e5e7eb;
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Gatuskrivning <span class="muted">🚒</span></h1>
+  <div id="topbar">
+    <label>Område:
+      <select id="areaSel">
+        <option value="ALLA" selected>Alla (Löddeköpinge + Hofterup/Ålstorp + Vikhög)</option>
+        <option value="LODDE">Löddeköpinge</option>
+        <option value="HOFTERUP">Hofterup / Ålstorp</option>
+        <option value="VIKHOG">Vikhög</option>
+      </select>
+    </label>
+
+    <label>Antal gator:
+      <input id="roundsInput" type="number" min="3" step="1" value="10" />
+    </label>
+    
+    <button id="startBtn" class="primary" disabled>Starta spelet</button>
+
+    <span id="target">Mål: —</span>
+    <button id="actionBtn" class="action" disabled>Gissa</button>
+    <span id="progress" class="pill">0 / 0</span>
+    <div id="progWrap" aria-hidden="true"><div id="progBar"></div></div>
+
+    <button id="showBoxBtn">Visa områdesram</button>
+    <button id="clearCacheBtn">Rensa cache</button>
+    <button id="helpToggle" type="button">Instruktioner</button>
+    <label style="display:flex;align-items:center;gap:4px;font-size:12px;margin-left:4px;">
+      <input type="checkbox" id="areaNameToggle" style="width:auto;padding:0;">
+      <span class="muted">Visa områdesnamn</span>
+    </label>
+  </div>
+  <div id="error" role="status" aria-live="polite"></div>
+  <div class="muted" id="meta"></div>
+</header>
+
+<div id="helpPanel">
+  <div id="helpTitle">Så här spelar du</div>
+  <ul>
+    <li>Välj område och antal gator.</li>
+    <li>Tryck <b>Starta spelet</b>.</li>
+    <li>Klicka på kartan där du tror gatan ligger – brandbilen 🚒 sätts ut.</li>
+    <li>Tryck <b>Gissa</b> för att se avstånd och poäng.</li>
+    <li>På sista frågan: tryck <b>Visa omgångens gator</b> för att se alla.</li>
+  </ul>
+  <div class="muted" style="font-size:12px">Tips: zooma och panorera som i vanliga kartor.</div>
+  <button id="helpCloseBtn" type="button">Stäng</button>
+</div>
+
+<div id="loadingOverlay" role="status" aria-live="polite">
+  <div id="loadingBox">
+    <div class="spinner" aria-hidden="true"></div>
+    <div id="loadingMsg">Laddar…</div>
+  </div>
+</div>
+
+<div id="map" role="region" aria-label="Karta"></div>
+<div id="resultCard" role="status" aria-live="polite">
+  <div id="resultTitle">Resultat</div>
+  <div id="resultBody"></div>
+  <div id="resultMeta"></div>
+</div>
+<div id="bearingCtrl" aria-hidden="true">
+  <div id="bearingArrow"></div>
+  <div>
+    <div id="bearingDeg">0°</div>
+    <div class="muted" style="font-size:12px">Riktning från gissning</div>
+  </div>
+</div>
+
+<div id="status">
+  <div id="log">Välj område, antal gator och tryck <b>Starta spelet</b>.</div>
+  <div id="score">Poäng: 0</div>
+</div>
+<div id="summary" style="display:none;"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin></script>
+<script>
+const AREAS = {
+  ALLA:     { name:"Alla",             center:[55.7695,12.9800], sw:[55.72668,12.90018], ne:[55.82260,13.03082] },
+  LODDE:    { name:"Löddeköpinge",     center:[55.7650,12.9650], sw:[55.74016,12.90018], ne:[55.78787,13.03082] },
+  HOFTERUP: { name:"Hofterup/Ålstorp", center:[55.7950,12.9600], sw:[55.77599,12.92284], ne:[55.82260,12.99374] },
+  VIKHOG:   { name:"Vikhög",           center:[55.7369,12.9624], sw:[55.72668,12.94928], ne:[55.74712,12.97554] }
+};
+let currentAreaKey = 'ALLA';
+
+const EXCLUDE_ALLA =   { sw:[55.71348, 13.00103], ne:[55.74315, 13.04172] };
+const EXCLUDE_ALLA_2 = { sw:[55.79800, 13.01416], ne:[55.82482, 13.03905] };
+
+const map = L.map('map',{center:AREAS[currentAreaKey].center,zoom:13});
+const baseNoLabels = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}{r}.png',{maxZoom:19, attribution:'&copy; OpenStreetMap & CARTO'}).addTo(map);
+const labelOverlay = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}{r}.png',{maxZoom:19, attribution:'&copy; OpenStreetMap & CARTO'});
+
+const $=id=>document.getElementById(id);
+const targetEl=$('target'), actionBtn=$('actionBtn'), progressEl=$('progress'),
+      logEl=$('log'), scoreEl=$('score'), errorEl=$('error'), metaEl=$('meta'), areaSel=$('areaSel'),
+      clearCacheBtn=$('clearCacheBtn'), showBoxBtn=$('showBoxBtn'), roundsInput=$('roundsInput'),
+      startBtn=$('startBtn'), summaryEl=$('summary'), loadingOverlay=$('loadingOverlay'), loadingMsg=$('loadingMsg'),
+      progBar=$('progBar'), resultCard=$('resultCard'), resultBody=$('resultBody'), resultMeta=$('resultMeta'),
+      bearingCtrl=$('bearingCtrl'), bearingDeg=$('bearingDeg'), bearingArrow=$('bearingArrow'),
+      helpPanel=$('helpPanel'), helpToggle=$('helpToggle'), helpCloseBtn=$('helpCloseBtn'),
+      areaNameToggle=$('areaNameToggle');
+
+function showLoading(msg){ if(msg) loadingMsg.textContent=msg; loadingOverlay.style.display='flex'; }
+function updateLoading(msg){ if(msg) loadingMsg.textContent=msg; }
+function hideLoading(){ loadingOverlay.style.display='none'; }
+function setProgress(frac){
+  const f=Math.max(0,Math.min(1,frac||0));
+  if(progBar) progBar.style.transform=`scaleX(${f})`;
+}
+
+async function runWithConcurrency(taskFns, limit=4, onOneDone){
+  const results=[]; let i=0; let active=0;
+  return await new Promise(resolve=>{
+    const pump=()=>{
+      if(i>=taskFns.length && active===0){ resolve(results); return; }
+      while(active<limit && i<taskFns.length){
+        const idx=i++; active++;
+        Promise.resolve().then(taskFns[idx])
+          .then(res=>{ results[idx]=res; })
+          .catch(()=>{ results[idx]=undefined; })
+          .finally(()=>{
+            active--;
+            try{ onOneDone&&onOneDone(); }catch{}
+            pump();
+          });
+      }
+    };
+    pump();
+  });
+}
+
+const toRad = d => d * Math.PI / 180;
+const toDeg = r => r * 180 / Math.PI;
+
+function bearing(a,b){
+  const φ1=toRad(a.lat), φ2=toRad(b.lat), λ1=toRad(a.lng), λ2=toRad(b.lng);
+  const y=Math.sin(λ2-λ1)*Math.cos(φ2);
+  const x=Math.cos(φ1)*Math.sin(φ2)-Math.sin(φ1)*Math.cos(φ2)*Math.cos(λ2-λ1);
+  let θ=Math.atan2(y,x);
+  θ=(toDeg(θ)+360)%360;
+  return θ;
+}
+
+const haversine=(a,b)=>{
+  const R=6371000,
+        dLat=toRad(b.lat-a.lat),
+        dLon=toRad(b.lng-a.lng),
+        lat1=toRad(a.lat),
+        lat2=toRad(b.lat);
+  const x=Math.sin(dLat/2)**2+Math.cos(lat1)*Math.cos(lat2)*Math.sin(dLon/2)**2;
+  return 2*R*Math.asin(Math.sqrt(x));
+};
+
+function llToXY(lat,lng){
+  const R=6371000;
+  const x = R * toRad(lng) * Math.cos(toRad(lat));
+  const y = R * toRad(lat);
+  return {x,y};
+}
+function pointToSegmentDistanceMeters(p, a, b){
+  const P = llToXY(p.lat,p.lng);
+  const A = llToXY(a.lat,a.lng);
+  const B = llToXY(b.lat,b.lng);
+  const vx = B.x - A.x, vy = B.y - A.y;
+  const wx = P.x - A.x, wy = P.y - A.y;
+  const c1 = vx*wx + vy*wy;
+  if (c1 <= 0) return Math.hypot(P.x-A.x, P.y-A.y);
+  const c2 = vx*vx + vy*vy;
+  if (c2 <= c1) return Math.hypot(P.x-B.x, P.y-B.y);
+  const t = c1 / c2;
+  const projX = A.x + t*vx, projY = A.y + t*vy;
+  return Math.hypot(P.x-projX, P.y-projY);
+}
+
+const nice=m=>m<1000?`${Math.round(m)} m`:`${(m/1000).toFixed(2)} km`;
+const scoreDist=m=>
+  m<=20?1000:
+  m<=30?950:
+  m<=60?900:
+  m<=100?850:
+  m<=250?800:
+  m<=500?650:
+  m<=1000?500:
+  m<=2000?300:0;
+
+const shuffle=a=>{
+  const x=a.slice();
+  for(let i=x.length-1;i>0;i--){
+    const j=Math.floor(Math.random()*(i+1));
+    [x[i],x[j]]=[x[j],x[i]];
+  }
+  return x;
+};
+const inRect=(lat,lng,rect)=>lat>=rect.sw[0]&&lat<=rect.ne[0]&&lng>=rect.sw[1]&&lng<=rect.ne[1];
+function inBounds(lat,lng,area){return L.latLngBounds(area.sw,area.ne).contains([lat,lng]);}
+function escapeOverpassName(name){
+  return String(name).replace(/\\/g,'\\\\').replace(/"/g,'\\"');
+}
+
+const OVERPASS_ENDPOINTS=[
+  'https://overpass-api.de/api/interpreter',
+  'https://z.overpass-api.de/api/interpreter',
+  'https://overpass.kumi.systems/api/interpreter',
+  'https://overpass.openstreetmap.fr/api/interpreter'
+];
+function bboxQuery(sw,ne){
+  const south=sw[0],west=sw[1],north=ne[0],east=ne[1];
+  return `[out:json][timeout:20];(way(${south},${west},${north},${east})["highway"]["name"];);out center qt;`;
+}
+async function fetchOverpassWithFallback(query,{signal}={}){
+  const controllers = OVERPASS_ENDPOINTS.map(()=>new AbortController());
+  const abortAll = ()=>controllers.forEach(c=>{ try{ c.abort(); }catch{} });
+  const promises = OVERPASS_ENDPOINTS.map((ep,i)=>
+    fetch(ep+'?data='+encodeURIComponent(query),{
+      signal:signal||controllers[i].signal,
+      cache:'no-store'
+    })
+      .then(async r=>{
+        if(!r.ok) throw new Error('HTTP '+r.status);
+        const text = await r.text();
+        try{
+          const json = JSON.parse(text);
+          return {endpoint:OVERPASS_ENDPOINTS[i], data:json};
+        }catch(e){
+          throw new Error('Overpass parsefel: '+text.slice(0,120));
+        }
+      })
+  );
+  try{
+    const result = await Promise.any(promises);
+    abortAll();
+    return result;
+  }catch(e){
+    abortAll();
+    throw e;
+  }
+}
+function cacheKeyFor(areaKey){
+  const a=AREAS[areaKey];
+  let key=`streets_${areaKey}_${a.sw.map(x=>x.toFixed(5)).join('_')}_${a.ne.map(x=>x.toFixed(5)).join('_')}`;
+  if(areaKey==='ALLA'){
+    key += `_EXC_${EXCLUDE_ALLA.sw.map(x=>x.toFixed(5)).join('_')}_${EXCLUDE_ALLA.ne.map(x=>x.toFixed(5)).join('_')}`+
+           `_EXC2_${EXCLUDE_ALLA_2.sw.map(x=>x.toFixed(5)).join('_')}_${EXCLUDE_ALLA_2.ne.map(x=>x.toFixed(5)).join('_')}`;
+  }
+  return key;
+}
+async function fetchAllStreetsForArea(areaKey){
+  const area=AREAS[areaKey];
+  const cacheKey=cacheKeyFor(areaKey);
+  const cached=localStorage.getItem(cacheKey);
+  if(cached){
+    const arr=JSON.parse(cached);
+    metaEl.textContent=`${area.name}: ${arr.length} gator (cache)`;
+    startBtn.disabled=false;
+    return arr;
+  }
+  const {endpoint,data}=await fetchOverpassWithFallback(bboxQuery(area.sw,area.ne));
+  const seen=new Map();
+  (data.elements||[]).forEach(el=>{
+    if(el.type==='way'&&el.tags&&el.tags.name&&el.center){
+      const n=el.tags.name.trim();
+      const {lat,lon}=el.center;
+      if(!inBounds(lat,lon,area)) return;
+      if (areaKey==='ALLA' && (inRect(lat,lon,EXCLUDE_ALLA) || inRect(lat,lon,EXCLUDE_ALLA_2))) return;
+      if(!seen.has(n)) seen.set(n,{name:n,latSum:lat,lngSum:lon,cnt:1});
+      else{
+        const s=seen.get(n);
+        s.latSum+=lat;
+        s.lngSum+=lon;
+        s.cnt++;
+      }
+    }
+  });
+  const list=[...seen.values()].map(s=>({
+    name:s.name,
+    lat:s.latSum/s.cnt,
+    lng:s.lngSum/s.cnt,
+    src:`overpass:${areaKey}`
+  })).sort((a,b)=>a.name.localeCompare(b.name,'sv'));
+  localStorage.setItem(cacheKey,JSON.stringify(list));
+  Object.keys(localStorage).forEach(k=>{
+    if(k.startsWith(`streets_${areaKey}_`) && k!==cacheKey) localStorage.removeItem(k);
+  });
+  metaEl.textContent=`${area.name}: ${list.length} gator (källa ${endpoint})`;
+  startBtn.disabled=false;
+  return list;
+}
+
+let streetLayer=null, bboxRect=null, bboxRectExcl=null, bboxRectExcl2=null, endLabelsLayer=null;
+const streetGeomMem = new Map();
+function streetGeomCacheKey(name, areaKey){ return `geom_v1_${areaKey}_${name}`; }
+function loadGeomFromCache(name, areaKey){
+  const raw = localStorage.getItem(streetGeomCacheKey(name, areaKey));
+  if(!raw) return null;
+  try{
+    const o=JSON.parse(raw);
+    return o && Array.isArray(o.elements) ? o : null;
+  }catch{
+    return null;
+  }
+}
+function saveGeomToCache(name, areaKey, data){
+  try{
+    localStorage.setItem(
+      streetGeomCacheKey(name, areaKey),
+      JSON.stringify({elements:data.elements||[]})
+    );
+  }catch{}
+}
+let streetGeomAbort=null;
+async function fetchStreetGeometryFast(name,areaKey,centers){
+  const memKey = areaKey+"::"+name;
+  if(streetGeomMem.has(memKey)) return {data:streetGeomMem.get(memKey)};
+  const cached = loadGeomFromCache(name, areaKey);
+  if(cached){
+    streetGeomMem.set(memKey, cached);
+    return {data:cached};
+  }
+
+  if(streetGeomAbort) streetGeomAbort.abort();
+  streetGeomAbort = new AbortController();
+
+  const tryRadii=[400,1200,2500];
+  const attempts=[];
+  const escName = escapeOverpassName(name);
+  for(const c of centers){
+    for(const r of tryRadii){
+      const q = `[out:json][timeout:20];\nway(around:${r},${c.lat},${c.lng})["highway"]["name"="${escName}"];\nout geom qt;`;
+      attempts.push(new Promise((resolve,reject)=>{
+        const controller = new AbortController();
+        const timer = setTimeout(()=>{ controller.abort(); reject(new Error('timeout')); }, 1000);
+        fetchOverpassWithFallback(q,{signal:controller.signal})
+          .then(res=>{
+            clearTimeout(timer);
+            if(res&&res.data&&Array.isArray(res.data.elements)&&res.data.elements.length){
+              resolve(res);
+            } else {
+              reject(new Error('empty'));
+            }
+          })
+          .catch(err=>{
+            clearTimeout(timer);
+            reject(err);
+          });
+      }));
+    }
+  }
+  try{
+    const winner = await Promise.any(attempts);
+    streetGeomMem.set(memKey, winner.data);
+    saveGeomToCache(name, areaKey, winner.data);
+    return winner;
+  }catch{
+    try{
+      const res = await fetchStreetGeometry(name, areaKey);
+      if(res && res.data){
+        streetGeomMem.set(memKey,res.data);
+        saveGeomToCache(name,areaKey,res.data);
+      }
+      return res;
+    }
+    catch(e){
+      return {data:{elements:[]}};
+    }
+  }
+}
+async function fetchStreetGeometry(name,areaKey){
+  const a=AREAS[areaKey],s=a.sw[0],w=a.sw[1],n=a.ne[0],e=a.ne[1];
+  const escName = escapeOverpassName(name);
+  const q=`[out:json][timeout:20];(way(${s},${w},${n},${e})["highway"]["name"="${escName}"];);out geom qt;`;
+  return await fetchOverpassWithFallback(q,{signal:streetGeomAbort?.signal});
+}
+function drawStreetGeometry(elements){
+  if(streetLayer){map.removeLayer(streetLayer);streetLayer=null;}
+  const lines=[],bounds=L.latLngBounds([]);
+  for(const el of(elements||[])){
+    if(el.type==='way'&&Array.isArray(el.geometry)){
+      const latlngs=el.geometry.map(p=>[p.lat,p.lon]);
+      const l=L.polyline(latlngs,{color:'#22c55e',weight:5,opacity:0.9});
+      lines.push(l);
+      latlngs.forEach(ll=>bounds.extend(ll));
+    }
+  }
+  if(lines.length){
+    streetLayer=L.layerGroup(lines).addTo(map);
+    return bounds;
+  }
+  return null;
+}
+
+let DS=[], order=[], playList=[], idx=-1, total=0, answered=0;
+let roundsToPlay=0;
+let guessMarker=null,answerMarker=null,line=null;
+let results=[];
+let hasGuessed=false;
+let guessPoints=[];
+let heatLayer=null;
+
+const truckIcon = L.divIcon({
+  className:'truckMarker',
+  html:'<span class="truckEmoji">🚒</span>',
+  iconSize:[28,28],
+  iconAnchor:[14,14],
+  tooltipAnchor:[0,-14]
+});
+
+function resetGraphics(){
+  if(guessMarker){map.removeLayer(guessMarker);guessMarker=null;}
+  if(answerMarker){map.removeLayer(answerMarker);answerMarker=null;}
+  if(line){map.removeLayer(line);line=null;}
+  if(streetLayer){map.removeLayer(streetLayer);streetLayer=null;}
+  if(map.hasLayer(labelOverlay)) map.removeLayer(labelOverlay);
+  hideBearing();
+  hideResult();
+}
+function clearEndLabels(){
+  if(endLabelsLayer){
+    map.removeLayer(endLabelsLayer);
+    endLabelsLayer=null;
+  }
+}
+function clearHeatLayer(){
+  if(heatLayer){
+    map.removeLayer(heatLayer);
+    heatLayer=null;
+  }
+}
+function updateHUD(){
+  progressEl.textContent=`${Math.min(answered,roundsToPlay)} / ${roundsToPlay}`;
+  scoreEl.textContent=`Poäng: ${total}`;
+  setProgress(roundsToPlay?answered/roundsToPlay:0);
+}
+
+/* Områdesnamn (valfritt, via Nominatim) */
+const areaNameCache = new Map();
+function areaNameKey(lat,lng){
+  return `areaname_${lat.toFixed(4)}_${lng.toFixed(4)}`;
+}
+function cleanPlaceName(name){
+  if(!name) return null;
+  let s = String(name).trim();
+  const badExact = ['Kävlinge','Kävlinge kommun','Skåne län','Skåne County','Sverige','Sweden'];
+  if(badExact.includes(s)) return null;
+  if(/kommun$/i.test(s)) return null;
+  if(/ län$/i.test(s)) return null;
+  return s;
+}
+function normalizePlaceName(name, lat, lng){
+  const p = String(name).toLowerCase();
+  // Hårdkodad korrigering: "Hörn" ska räknas som Löddeköpinge i detta spel
+  if(p === 'hörn' || p === 'horn') return 'Löddeköpinge';
+  return name;
+}
+async function fetchAreaName(lat,lng){
+  const key = areaNameKey(lat,lng);
+  if(areaNameCache.has(key)) return areaNameCache.get(key);
+  const stored = localStorage.getItem(key);
+  if(stored){
+    areaNameCache.set(key, stored);
+    return stored;
+  }
+  try{
+    const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&accept-language=sv&zoom=14&addressdetails=1`;
+    const res = await fetch(url,{headers:{'Accept':'application/json'}});
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    const data = await res.json();
+
+    let place = null;
+    if(data && data.address){
+      const adr = data.address;
+      const parts = [];
+      const keys = ['village','town','city'];
+      for(const k of keys){
+        if(adr[k]){
+          const cleaned = cleanPlaceName(adr[k]);
+          if(cleaned){
+            const norm = normalizePlaceName(cleaned, lat, lng);
+            if(norm && !parts.includes(norm)) parts.push(norm);
+          }
+        }
+      }
+      if(parts.length) place = parts.join(', ');
+    }
+
+    if(!place && data && data.display_name){
+      const first = data.display_name.split(',')[0].trim();
+      const cleaned = cleanPlaceName(first);
+      if(cleaned) place = normalizePlaceName(cleaned, lat, lng);
+    }
+
+    areaNameCache.set(key, place);
+    if(place) localStorage.setItem(key, place);
+    return place;
+  }catch(e){
+    areaNameCache.set(key, null);
+    return null;
+  }
+}
+let showAreaName = false;
+function currentItem(){
+  if(idx<0 || !playList.length) return null;
+  const i = playList[idx];
+  return DS[i];
+}
+async function updateTargetLabel(){
+  const it = currentItem();
+  if(!it){
+    targetEl.textContent='Mål: —';
+    return;
+  }
+  const baseName = it.name;
+  if(!showAreaName){
+    targetEl.textContent=`Mål: ${baseName}`;
+    return;
+  }
+  if(it.areaName){
+    targetEl.textContent=`Mål: ${baseName}, ${it.areaName}`;
+    return;
+  }
+  targetEl.textContent=`Mål: ${baseName} …`;
+  const lat = it.lat, lng = it.lng;
+  const place = await fetchAreaName(lat,lng);
+  const now = currentItem();
+  if(!now || now.name !== baseName) return;
+  if(showAreaName && place){
+    it.areaName = place;
+    targetEl.textContent=`Mål: ${baseName}, ${place}`;
+  }else{
+    targetEl.textContent=`Mål: ${baseName}`;
+  }
+}
+function showTarget(){
+  updateTargetLabel();
+}
+
+function showBearing(deg){
+  bearingCtrl.style.display='flex';
+  bearingArrow.style.transform=`rotate(${deg}deg)`;
+  bearingDeg.textContent=`${Math.round(deg)}°`;
+}
+function hideBearing(){ bearingCtrl.style.display='none'; }
+
+function showResult({distance, points, name}){
+  resultCard.style.display='block';
+  resultBody.innerHTML = `Avstånd: <b>${nice(distance)}</b> • Poäng: <b>${points}</b>`;
+  resultMeta.innerHTML = `<span class="badge">${name}</span> <span class="badge">#${answered} av ${roundsToPlay}</span>`;
+  let color = distance>2000? '#ef4444' : distance>500? '#f97316' : '#22c55e';
+  resultCard.style.borderLeftColor = color;
+}
+function hideResult(){ resultCard.style.display='none'; }
+
+const prefetch={inFlight:new Set(), done:new Set(), queue:[], MAX_CONC:6};
+function prefetchOne(name){
+  const key=currentAreaKey+"::"+name;
+  if(prefetch.inFlight.has(key)||prefetch.done.has(key)) return;
+  prefetch.inFlight.add(key);
+  const item=DS.find(d=>d.name===name);
+  const centers=[ item?{lat:item.lat,lng:item.lng}:{lat:AREAS[currentAreaKey].center[0],lng:AREAS[currentAreaKey].center[1]} ];
+  fetchStreetGeometryFast(name,currentAreaKey,centers).finally(()=>{
+    prefetch.inFlight.delete(key);
+    prefetch.done.add(key);
+    ensurePrefetch();
+  });
+}
+function ensurePrefetch(){
+  while(prefetch.inFlight.size<prefetch.MAX_CONC && prefetch.queue.length){
+    const n=prefetch.queue.shift();
+    prefetchOne(n);
+  }
+}
+function schedulePrefetchFrom(i){
+  prefetch.queue=[];
+  if(!DS||!DS.length) return;
+  for(let k=i;k<Math.min(playList.length,i+6);k++) prefetch.queue.push(DS[playList[k]].name);
+  ensurePrefetch();
+}
+
+function centersForIndex(ix){
+  const it=DS[ix];
+  return it ? [{lat:it.lat,lng:it.lng}] : [{lat:AREAS[currentAreaKey].center[0],lng:AREAS[currentAreaKey].center[1]}];
+}
+async function ensureGeomPreloaded(ix){
+  const it=DS[ix];
+  if(!it) return;
+  const name=it.name;
+  const memKey=currentAreaKey+"::"+name;
+  if(streetGeomMem.has(memKey) || loadGeomFromCache(name, currentAreaKey)) return;
+
+  await new Promise(resolve=>{
+    let done=false;
+    const to=setTimeout(()=>{
+      if(!done){
+        done=true;
+        resolve('__TIMEOUT__');
+      }
+    }, 2000);
+    fetchStreetGeometryFast(name, currentAreaKey, centersForIndex(ix))
+      .then(()=>{
+        if(!done){
+          done=true;
+          clearTimeout(to);
+          resolve('__OK__');
+        }
+      })
+      .catch(()=>{
+        if(!done){
+          done=true;
+          clearTimeout(to);
+          resolve('__FAIL__');
+        }
+      });
+  });
+
+  if(streetGeomMem.has(memKey) || loadGeomFromCache(name, currentAreaKey)) return;
+
+  try{
+    await (async function fetchStreetGeometryBBoxQuick(){
+      const a=AREAS[currentAreaKey],s=a.sw[0],w=a.sw[1],n=a.ne[0],e=a.ne[1];
+      const escName = escapeOverpassName(name);
+      const q=`[out:json][timeout:25];(way(${s},${w},${n},${e})["highway"]["name"="${escName}"];);out geom qt;`;
+      const controller = new AbortController();
+      const t=setTimeout(()=>controller.abort(),6000);
+      try{
+        const res=await fetchOverpassWithFallback(q,{signal:controller.signal});
+        if(res&&res.data){
+          saveGeomToCache(name, currentAreaKey, res.data);
+          streetGeomMem.set(memKey,res.data);
+        }
+      }finally{
+        clearTimeout(t);
+      }
+    })();
+  }catch{}
+}
+
+async function preloadPlaylistGeoms(){
+  if(!playList||!playList.length) return;
+  const LIMIT=6;
+  const tasks = playList.map(ix=>()=>ensureGeomPreloaded(ix));
+  let done=0;
+  const totalT=tasks.length;
+  showLoading('Förladdar gator… 0%');
+  await runWithConcurrency(tasks, LIMIT, ()=>{
+    done++;
+    const p=Math.round(done*100/totalT);
+    updateLoading(`Förladdar gator… ${p}%`);
+    setProgress(done/totalT);
+  });
+  hideLoading();
+  logEl.innerHTML = 'Klar! Klicka där du tror gatan ligger, tryck sedan Gissa.';
+}
+
+function nextQ(){
+  resetGraphics();
+  idx++;
+  if(idx>=playList.length){
+    endGame();
+    return;
+  }
+  showTarget();
+  hasGuessed=false;
+  actionBtn.disabled=false;
+  actionBtn.textContent='Gissa';
+  logEl.textContent = 'Klicka där du tror gatan ligger, tryck sedan Gissa.';
+  schedulePrefetchFrom(idx);
+}
+
+map.on('click', e => {
+  if (actionBtn.disabled || hasGuessed) return;
+  if (guessMarker) map.removeLayer(guessMarker);
+  guessMarker = L.marker(e.latlng, { title: 'Din gissning', icon: truckIcon }).addTo(map);
+  const targetZoom = Math.max(map.getZoom(), 15);
+  if (map.getZoom() < targetZoom) {
+    map.setView(e.latlng, targetZoom, { animate: true });
+  } else {
+    map.panTo(e.latlng, { animate: true });
+  }
+});
+
+function getPreloadedGeomFor(name){
+  const memKey=currentAreaKey+"::"+name;
+  if(streetGeomMem.has(memKey)) return streetGeomMem.get(memKey);
+  const cached = loadGeomFromCache(name, currentAreaKey);
+  if(cached) return cached;
+  return null;
+}
+
+async function finalizeRound(userLatLng, it){
+  if(answerMarker){map.removeLayer(answerMarker);} 
+  if(line){map.removeLayer(line);} 
+  if(streetLayer){map.removeLayer(streetLayer);streetLayer=null;}
+
+  answerMarker=L.marker([it.lat,it.lng]).addTo(map);
+
+  const guess = userLatLng || {lat:map.getCenter().lat,lng:map.getCenter().lng};
+
+  const pre = getPreloadedGeomFor(it.name);
+  let d;
+  if (pre && pre.elements && pre.elements.length){
+    let min = Infinity;
+    for(const el of pre.elements){
+      if(el.type==='way' && Array.isArray(el.geometry)){
+        const geom = el.geometry;
+        for(let i=0;i<geom.length-1;i++){
+          const a = {lat:geom[i].lat,   lng:geom[i].lon};
+          const b = {lat:geom[i+1].lat, lng:geom[i+1].lon};
+          const dd = pointToSegmentDistanceMeters(guess, a, b);
+          if(dd<min) min=dd;
+        }
+      }
+    }
+    d = isFinite(min) ? min : haversine(guess,{lat:it.lat,lng:it.lng});
+  } else {
+    d = haversine(guess,{lat:it.lat,lng:it.lng});
+  }
+
+  let pts=scoreDist(d);
+  total += pts;
+  answered++;
+  results.push({name:it.name, distance:d, points:pts});
+  updateHUD();
+  guessPoints.push([guess.lat,guess.lng]);
+
+  const bbImmediate=L.latLngBounds([guess, [it.lat,it.lng]]);
+  if(bbImmediate.isValid()) map.fitBounds(bbImmediate.pad(0.2),{maxZoom:17, animate:false});
+  if(map.getZoom()<14) map.setZoom(14,{animate:false});
+  if(!map.hasLayer(labelOverlay)) labelOverlay.addTo(map);
+
+  try{
+    const deg=bearing(guess,{lat:it.lat,lng:it.lng});
+    showBearing(deg);
+  }catch{}
+
+  if (pre && pre.elements && pre.elements.length){
+    const b=drawStreetGeometry(pre.elements);
+    if(b){
+      b.extend(guess);
+      b.extend([it.lat,it.lng]);
+      map.fitBounds(b.pad(0.15),{maxZoom:17, animate:false});
+    }
+  }
+
+  showResult({distance:d, points:pts, name:it.name});
+
+  hasGuessed=true;
+  actionBtn.textContent='Nästa';
+  actionBtn.disabled=false;
+}
+
+actionBtn.onclick = async () => {
+  if(!hasGuessed){
+    if(!guessMarker){
+      logEl.textContent='Klicka på kartan först.';
+      return;
+    }
+    actionBtn.disabled=true;
+    const it=DS[playList[idx]];
+    await finalizeRound(guessMarker.getLatLng(), it);
+    if(answered >= roundsToPlay){
+      actionBtn.textContent='Visa omgångens gator';
+      actionBtn.disabled=false;
+      return;
+    }
+    actionBtn.textContent='Nästa';
+    actionBtn.disabled=false;
+  } else {
+    if(answered >= roundsToPlay){
+      endGame();
+    } else {
+      nextQ();
+    }
+  }
+};
+
+async function startGame(){
+  roundsToPlay = Math.max(
+    3,
+    Math.min(
+      parseInt(roundsInput.value||'10',10),
+      Math.min(15, DS.length)
+    )
+  );
+  order = shuffle([...DS.keys()]);
+  playList = order.slice(0, roundsToPlay);
+  idx=-1; total=0; answered=0; results=[]; guessPoints=[];
+  clearHeatLayer();
+  clearEndLabels();
+  summaryEl.style.display='none';
+  updateHUD();
+  setProgress(0);
+  actionBtn.disabled=true;
+  await preloadPlaylistGeoms();
+  nextQ();
+}
+startBtn.onclick = startGame;
+
+function endGame(){
+  actionBtn.disabled=true;
+  targetEl.textContent='Mål: —';
+  hideBearing();
+
+  const sumPoints = total;
+  const avgDist = results.length ? (results.reduce((a,r)=>a+r.distance,0)/results.length) : 0;
+
+  const maxPointsPerRound = 1000;
+  const maxTotal = results.length * maxPointsPerRound;
+  const pctPoints = maxTotal ? (sumPoints / maxTotal * 100) : 0;
+  const fullHits = results.filter(r => scoreDist(r.distance) === maxPointsPerRound).length;
+  const pctFullHits = results.length ? (fullHits / results.length * 100) : 0;
+  let qualityLabel = '';
+  if (pctFullHits >= 95) {
+    qualityLabel = '🔥 Över 95% av gatorna med full poäng!';
+  }
+
+  if (pctPoints >= 95) {
+    setTimeout(() => { alert('FIN BÅT'); }, 150);
+  }
+
+  summaryEl.innerHTML = `<b>Summering</b><br>
+    Runder: ${results.length} &nbsp;|&nbsp; Poäng: <b>${sumPoints}</b> &nbsp;|&nbsp; Snittavstånd: <b>${nice(avgDist)}</b><br>
+    Full poäng (≤20 m): <b>${fullHits} av ${results.length}</b> (${pctFullHits.toFixed(1)}%)${qualityLabel ? '<br>' + qualityLabel : ''}`;
+  summaryEl.style.display='block';
+  logEl.innerHTML = `<b>Klart!</b> Slutpoäng: ${sumPoints}. Välj nytt område/antal och starta igen.`;
+
+  if(endLabelsLayer){ map.removeLayer(endLabelsLayer); }
+  const markers = [];
+  for(const rIdx of playList){
+    const it = DS[rIdx];
+    const m = L.marker([it.lat,it.lng]);
+    m.bindTooltip(it.name, {permanent:true, direction:'top', offset:[0,-8], opacity:0.9});
+    markers.push(m);
+  }
+  endLabelsLayer = L.layerGroup(markers).addTo(map);
+
+  clearHeatLayer();
+  if(guessPoints.length){
+    const circles = guessPoints.map(([lat,lng])=>
+      L.circleMarker([lat,lng],{
+        radius:6,
+        color:'#ef4444',
+        weight:1,
+        opacity:0.5,
+        fillColor:'#ef4444',
+        fillOpacity:0.15
+      })
+    );
+    heatLayer = L.layerGroup(circles).addTo(map);
+  }
+
+  const bb = L.latLngBounds([]);
+  markers.forEach(m=>bb.extend(m.getLatLng()));
+  if(guessPoints.length){ guessPoints.forEach(p=>bb.extend(p)); }
+  if(bb.isValid()) map.fitBounds(bb.pad(0.2), {maxZoom:16});
+}
+
+async function setArea(areaKey){
+  currentAreaKey=areaKey;
+  errorEl.textContent='';
+  metaEl.textContent='Laddar gator…';
+  resetGraphics();
+  clearEndLabels();
+  clearHeatLayer();
+  summaryEl.style.display='none';
+  setProgress(0);
+  actionBtn.disabled=true;
+  startBtn.disabled=true;
+  map.setView(AREAS[areaKey].center,13);
+  showLoading('Laddar gator från Overpass…');
+  try{
+    DS=await fetchAllStreetsForArea(areaKey);
+    if(DS.length<5){
+      errorEl.textContent='Hittade för få gator i området.';
+      hideLoading();
+      return;
+    }
+    const maxRounds = Math.min(15, DS.length);
+    roundsInput.max = maxRounds;
+    if(parseInt(roundsInput.value||'10',10) > maxRounds) {
+      roundsInput.value = Math.min(10, maxRounds);
+    }
+    metaEl.textContent = `${AREAS[areaKey].name}: ${DS.length} gator laddade.`;
+    if(areaKey==='ALLA') metaEl.textContent += ' (Exkludering aktiv)';
+    logEl.textContent='Välj antal gator och tryck Starta spelet.';
+    startBtn.disabled = false;
+    hideLoading();
+  }catch(e){
+    hideLoading();
+    errorEl.textContent='Fel: '+e.message;
+  }
+}
+areaSel.addEventListener('change',e=>setArea(e.target.value));
+
+let showingBox=false;
+function toggleBox(){
+  const area = AREAS[currentAreaKey];
+  if (showingBox) {
+    if (bboxRect) { map.removeLayer(bboxRect); bboxRect=null; }
+    if (bboxRectExcl)  { map.removeLayer(bboxRectExcl);  bboxRectExcl=null; }
+    if (bboxRectExcl2) { map.removeLayer(bboxRectExcl2); bboxRectExcl2=null; }
+    showingBox=false;
+    return;
+  }
+  bboxRect = L.rectangle([area.sw, area.ne], { color:'#3b82f6', weight:2, fill:false }).addTo(map);
+  bboxRectExcl  = L.rectangle([EXCLUDE_ALLA.sw,  EXCLUDE_ALLA.ne],  { color:'#ef4444', weight:2, fill:false, dashArray:'6,6' }).addTo(map);
+  bboxRectExcl2 = L.rectangle([EXCLUDE_ALLA_2.sw,EXCLUDE_ALLA_2.ne],{ color:'#ef4444', weight:2, fill:false, dashArray:'6,6' }).addTo(map);
+  const bounds = L.latLngBounds(area.sw, area.ne);
+  bounds.extend(EXCLUDE_ALLA.sw).extend(EXCLUDE_ALLA.ne);
+  bounds.extend(EXCLUDE_ALLA_2.sw).extend(EXCLUDE_ALLA_2.ne);
+  map.fitBounds(bounds.pad(0.05));
+  showingBox = true;
+}
+showBoxBtn.onclick=toggleBox;
+
+clearCacheBtn.onclick=()=>{
+  Object.keys(localStorage).forEach(k=>{
+    if(k.startsWith('streets_') || k.startsWith('custom_bbox_') || k.startsWith('geom_v1_')) localStorage.removeItem(k);
+  });
+  alert('Cache rensad. Välj område igen.');
+  setArea(currentAreaKey);
+};
+
+if(helpToggle && helpPanel && helpCloseBtn){
+  helpToggle.addEventListener('click',()=>{
+    helpPanel.classList.toggle('open');
+  });
+  helpCloseBtn.addEventListener('click',()=>{
+    helpPanel.classList.remove('open');
+  });
+}
+
+if(areaNameToggle){
+  areaNameToggle.addEventListener('change', e=>{
+    showAreaName = e.target.checked;
+    updateTargetLabel();
+  });
+}
+
+(async function init(){ await setArea(currentAreaKey); })();
+
+(function selfTests(){
+  const tests=[];
+  const a=AREAS.ALLA;
+  const q=bboxQuery(a.sw,a.ne);
+  tests.push({name:'bboxQuery contains sw lat', ok:q.includes(a.sw[0].toString())});
+  const k1=cacheKeyFor('ALLA'), k2=cacheKeyFor('ALLA');
+  tests.push({name:'cacheKey deterministic', ok:k1===k2});
+  tests.push({name:'inBounds center true', ok: inBounds(a.center[0], a.center[1], a)});
+  tests.push({name:'scoreDist 10m = 1000', ok: scoreDist(10)===1000});
+  tests.push({name:'scoreDist 25m = 950', ok: scoreDist(25)===950});
+  tests.push({name:'scoreDist 50m = 900', ok: scoreDist(50)===900});
+  tests.push({name:'scoreDist 1500m = 300', ok: scoreDist(1500)===300});
+  tests.push({name:'runWithConcurrency exists', ok: typeof runWithConcurrency==='function'});
+  tests.push({name:'truckIcon exists', ok: !!truckIcon});
+  console.log('Self-tests:', tests, 'ALL OK =', tests.every(t=>t.ok));
+})();
+</script>
+</body>
+</html>
