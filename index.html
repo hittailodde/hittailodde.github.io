@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Gatuskrivning för Rökdykarpike</title>
+<title>Gatuquiz – Brandövningsläge (med Carlos fusk)</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin>
 <style>
   :root{
@@ -51,8 +51,8 @@
   label{color:#e5e7eb;font-size:14px}
   .pill{background:#020617;color:#cbd5f5;border:1px solid #4b5563;padding:6px 10px;border-radius:999px}
   #target{font-weight:700;font-size:18px;padding:6px 12px;border-radius:10px;background:rgba(250,204,21,0.12);border:1px solid rgba(250,204,21,0.7);color:#facc15}
-  #map{width:100%;height:calc(100vh - 320px);border-top:1px solid #111827;border-bottom:1px solid #111827}
-  #status{padding:var(--pad);border-top:1px solid #111827;display:flex;gap:12px;align-items:center;flex-wrap:wrap;background:#020617;color:#e5e7eb}
+  #map{width:100%;height:calc(100vh - 200px);border-top:1px solid #111827;border-bottom:1px solid #111827}
+  #status{padding:6px;border-top:1px solid #111827;display:flex;gap:12px;align-items:center;flex-wrap:wrap;background:#020617;color:#e5e7eb}
   #score{margin-left:auto;font-weight:700}
   #error{color:#fb7185;margin-top:6px}
   .muted{color:#9ca3af;font-size:13px}
@@ -179,7 +179,7 @@
   <div id="topbar">
     <label>Område:
       <select id="areaSel">
-        <option value="ALLA" selected>Alla</option>
+        <option value="ALLA" selected>Alla (Löddeköpinge + Hofterup/Ålstorp + Vikhög)</option>
         <option value="LODDE">Löddeköpinge</option>
         <option value="HOFTERUP">Hofterup / Ålstorp</option>
         <option value="VIKHOG">Vikhög</option>
@@ -623,7 +623,6 @@ function cleanPlaceName(name){
 }
 function normalizePlaceName(name, lat, lng){
   const p = String(name).toLowerCase();
-  // Hårdkodad korrigering: "Hörn" ska räknas som Löddeköpinge i detta spel
   if(p === 'hörn' || p === 'horn') return 'Löddeköpinge';
   return name;
 }
@@ -710,9 +709,7 @@ function showTarget(){
 }
 
 function showBearing(deg){
-  bearingCtrl.style.display='flex';
-  bearingArrow.style.transform=`rotate(${deg}deg)`;
-  bearingDeg.textContent=`${Math.round(deg)}°`;
+  /* Kompassen är avstängd – visar ingen riktning längre */
 }
 function hideBearing(){ bearingCtrl.style.display='none'; }
 
